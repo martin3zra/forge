@@ -64,3 +64,13 @@ func (BadRequest) Status() int {
 func (BadRequest) Error() string {
 	return "Bad Request"
 }
+
+// HTTPError carries an HTTP status alongside a human-readable message,
+// satisfying ErrorFormatter for typed error responses.
+type HTTPError struct {
+	StatusCode int
+	Message    string
+}
+
+func (e HTTPError) Status() int   { return e.StatusCode }
+func (e HTTPError) Error() string { return e.Message }

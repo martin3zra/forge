@@ -33,7 +33,10 @@ func ParseRequest(r *http.Request, body any, params ...map[string]string) error 
 		defer r.Body.Close()
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			log.Println(err)
-			return new(foundation.BadRequest)
+			return foundation.HTTPError{
+				StatusCode: http.StatusBadRequest,
+				Message:    "invalid JSON request body",
+			}
 		}
 	}
 
@@ -61,7 +64,9 @@ func ParseRequest(r *http.Request, body any, params ...map[string]string) error 
 		return nil
 	}
 
-	return new(foundation.UnprocessableEntity)
+	// Plain struct payloads (not FormRequestContract) carry no authorization or
+	// validation rules; a successful decode is all that's required.
+	return nil
 }
 
 func HydrateFromForm(r *http.Request, obj any) {
