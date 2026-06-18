@@ -59,7 +59,7 @@ func (d *DatabaseStore) destroy(id string) error {
 
 func (d *DatabaseStore) gc(idleExpiration, absoluteExpiration time.Duration) error {
 
-	_, err := d.db.Exec("DELETE FROM sessions WHERE created_at < $1 OR last_activity_at < $2", time.Now().Add(-absoluteExpiration), time.Now().Add(-idleExpiration))
+	_, err := d.db.Exec("DELETE FROM sessions WHERE created_at < $1 OR last_activity < $2", time.Now().Add(-absoluteExpiration), time.Now().Add(-idleExpiration))
 	if err != nil {
 		return err
 	}
