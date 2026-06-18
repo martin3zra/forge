@@ -321,3 +321,126 @@ func TestRequiredIfStringRule(t *testing.T) {
 		t.Errorf("expected validation to fail for missing type when transaction_kind is invoice: %v", v.Errors())
 	}
 }
+
+// ---------------------
+// map[string]any input
+// ---------------------
+
+func TestMapValidInput(t *testing.T) {
+	data := map[string]any{
+		"name":  "Jane",
+		"email": "jane@example.com",
+		"age":   25.0, // JSON numbers decode to float64
+		"address": map[string]any{
+			"line": "C/Mama Tingo 123",
+		},
+		"contacts": []any{
+			map[string]any{"name": "Natasha Martinez Garcia", "phone": "8099879235"},
+		},
+	}
+
+	var v = validator.Validator{}
+	v.Validate(context.Background(), data, map[string]any{
+		"name":             "required|min:2|max:4",
+		"email":            "required|email",
+		"age":              "between:18,30",
+		"address.line":     "required|min:10",
+		"contacts.*.name":  "required|min:10",
+		"contacts.*.phone": "required|min:3|max:11",
+	})
+	if len(v.Errors()) > 0 {
+		t.Errorf("validation should pass for map input:\n %v", v.Errors())
+	}
+}
+
+func TestMapInRule(t *testing.T) {
+	var v = validator.Validator{}
+	v.Validate(context.Background(), map[string]any{"gender": "f"}, map[string]any{
+		"gender": "required|in:m,f",
+	})
+	if len(v.Errors()) > 0 {
+		t.Errorf("validation should pass:\n %v", v.Errors())
+	}
+}
+
+func TestMapSometimesSkipsAbsent(t *testing.T) {
+	var v = validator.Validator{}
+	// "email" is absent; sometimes means it is skipped rather than failing.
+	v.Validate(context.Background(), map[string]any{"age": 20.0}, map[string]any{
+		"email": "sometimes|email",
+		"age":   "required|gte:20",
+	})
+	if len(v.Errors()) > 0 {
+		t.Errorf("validation should pass:\n %v", v.Errors())
+	}
+}
+
+func TestMapDigitsOnIntegralFloat(t *testing.T) {
+	var v = validator.Validator{}
+	v.Validate(context.Background(), map[string]any{"age": 22.0}, map[string]any{
+		"age": "required|min_digits:2",
+	})
+	if len(v.Errors()) > 0 {
+		t.Errorf("integer rules must apply to integral floats:\n %v", v.Errors())
+	}
+}
+
+// Absent required key must fail — the Laravel semantic the struct path cannot
+// express (struct fields are always present as zero values).
+func TestMapAbsentRequiredFails(t *testing.T) {
+	var v = validator.Validator{}
+	v.Validate(context.Background(), map[string]any{"age": 20.0}, map[string]any{
+		"name": "required",
+		"age":  "required",
+	})
+	if _, ok := v.Errors()["name"]; !ok {
+		t.Errorf("expected a 'name' required error for the absent key, got: %v", v.Errors())
+	}
+}
+
+func TestMapNullRequiredFails(t *testing.T) {
+	var v = validator.Validator{}
+	v.Validate(context.Background(), map[string]any{"name": nil}, map[string]any{
+		"name": "required",
+	})
+	if _, ok := v.Errors()["name"]; !ok {
+		t.Errorf("expected a 'name' required error for null value, got: %v", v.Errors())
+	}
+}
+
+// ---------------------
+// wildcard now actually applies (previously a no-op)
+// ---------------------
+
+func TestWildcardSliceFailsStruct(t *testing.T) {
+	person := Person{
+		Email: "martin3zra@gmail.com",
+		Contacts: []Contact{
+			{Name: "Bob", Phone: "809"}, // name too short for min:10
+		},
+	}
+
+	var v = validator.Validator{}
+	v.Validate(context.Background(), &person, map[string]any{
+		"contacts.*.name": "required|min:10",
+	})
+	if _, ok := v.Errors()["contacts.0.name"]; !ok {
+		t.Errorf("expected error at contacts.0.name, got: %v", v.Errors())
+	}
+}
+
+func TestWildcardSliceFailsMap(t *testing.T) {
+	data := map[string]any{
+		"contacts": []any{
+			map[string]any{"name": "Bob"},
+		},
+	}
+
+	var v = validator.Validator{}
+	v.Validate(context.Background(), data, map[string]any{
+		"contacts.*.name": "required|min:10",
+	})
+	if _, ok := v.Errors()["contacts.0.name"]; !ok {
+		t.Errorf("expected error at contacts.0.name, got: %v", v.Errors())
+	}
+}

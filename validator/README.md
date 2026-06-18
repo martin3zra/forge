@@ -1,8 +1,8 @@
 # validator
 
-Reflection-driven, Laravel-style struct validation. Rules are a `map[string]any` keyed by **`json` struct tag**, with pipe-delimited rule strings.
+Rule-driven, Laravel-style validation. Rules are a `map[string]any` keyed by dot-path, with pipe-delimited rule strings. The data source can be a **struct** (keyed by `json` tag) or a **`map[string]any`** (e.g. a decoded JSON body) — the same rule set works for both.
 
-## Basic usage
+## Basic usage (struct)
 
 ```go
 type CreateUser struct {
@@ -22,6 +22,29 @@ if !ok {
 }
 ```
 
+## Validating a map
+
+Pass a `map[string]any` instead of a struct — handy for dynamic or partial payloads where you don't have a type:
+
+```go
+var data map[string]any
+json.NewDecoder(r.Body).Decode(&data)
+
+v := new(validator.Validator)
+v.Validate(ctx, data, map[string]any{
+    "name":            "required|min:2",
+    "address.line":    "required",
+    "contacts.*.name": "required|min:3",
+})
+```
+
+Notes for map input:
+
+- **Absent keys fail `required`** (Laravel semantics). A struct field, by contrast, is always present as its zero value.
+- JSON numbers decode to `float64`; integral values are coerced to `int` so integer rules (`digits`, `min_digits`, …) apply.
+- A non-`required` rule on an absent key is skipped; `sometimes` likewise skips absent keys.
+- Custom messages via a `Messages()` method are only available for **struct** input (a map has no method to call).
+
 ## Rules
 
 Defined in `types.go` (`defaultRules`). Highlights:
@@ -35,16 +58,18 @@ Two modifiers:
 - `sometimes` — only validate when the field is non-zero.
 - `bail` — stop at the first failure for that field.
 
-## Nested structs & slices
+## Nested fields & wildcards
 
-The validator recurses into nested structs and slices automatically. Address nested fields with dotted keys, and slice elements with `[*]`:
+Address nested fields with dotted keys, and collection elements with a `*` wildcard segment:
 
 ```go
 map[string]any{
     "address.city":   "required",
-    "items[*].price": "gte:0",
+    "items.*.price":  "gte:0",
 }
 ```
+
+The `*` expands over the elements present in the data, and errors are recorded under the concrete index — e.g. a failure on the second item is keyed `items.1.price`.
 
 Embedded (anonymous) structs inherit the parent prefix.
 

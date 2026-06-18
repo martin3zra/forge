@@ -20,91 +20,20 @@ func (v *Validator) Validate(ctx context.Context, object any, rules map[string]a
 	}
 
 	v.ctx = ctx
+	v.src = newSource(object)
+	v.customErrorMessages = v.src.messages()
 
-	v.validateAttributes(object, rules, "")
+	// Rule-driven walk: iterate the rule set and resolve each attribute's value
+	// from the data source (struct or map). A "*" segment is expanded into the
+	// concrete indices present in the data.
+	for key, rule := range rules {
+		for _, path := range v.src.expand(key) {
+			value, present := v.src.get(path)
+			v.compileRuleSet(path, value, present, v.resolveRuleComponents(rule))
+		}
+	}
 
 	return len(v.errors) == 0
-}
-
-// Validate a given struct/object/attribute against a rule set
-func (v *Validator) validateAttributes(object any, rules map[string]any, prefix string) {
-	val := reflect.ValueOf(object)
-	if val.Kind() == reflect.Ptr {
-		val = val.Elem()
-	}
-
-	v.customErrorMessages = map[string]string{}
-	hasMessages := val.MethodByName("Messages")
-	if hasMessages.IsValid() && hasMessages.Kind() == reflect.Func {
-		result := hasMessages.Call([]reflect.Value{})[0].Interface()
-		if messages, ok := result.(map[string]string); ok {
-			v.customErrorMessages = messages
-		}
-	}
-
-	// Ensure struct
-	if val.Kind() != reflect.Struct {
-		return
-	}
-
-	for i := 0; i < val.NumField(); i++ {
-		field := val.Field(i)
-		fieldType := val.Type().Field(i)
-
-		// Skip unexported fields
-		if !field.CanInterface() {
-			continue
-		}
-
-		key := v.resolveKeyBasedOnJsonTag(fieldType)
-		isStruct := field.Kind() == reflect.Struct && field.Type() != reflect.TypeOf(time.Time{})
-		isSlice := field.Kind() == reflect.Slice
-
-		// Build fullKey with prefix
-		var fullKey string
-		if key != "" {
-			if prefix != "" {
-				fullKey = prefix + "." + key
-			} else {
-				fullKey = key
-			}
-		} else if fieldType.Anonymous {
-			// Embedded/anonymous struct inherits prefix
-			v.validateAttributes(field.Interface(), rules, prefix)
-			continue
-		} else {
-			// Skip unnamed fields that are not anonymous
-			continue
-		}
-
-		switch {
-		case isStruct:
-			if field.Type() == reflect.TypeOf(time.Time{}) {
-				if rule, ok := rules[fullKey]; ok {
-					v.compileRuleSet(fullKey, field, v.resolveRuleComponents(rule))
-				}
-				continue
-			}
-			v.validateAttributes(field.Interface(), rules, fullKey)
-
-		case isSlice:
-			if field.Len() == 0 {
-				if rule, ok := rules[fullKey]; ok {
-					v.compileRuleSet(fullKey, field, v.resolveRuleComponents(rule))
-				}
-				continue
-			}
-			for j := 0; j < field.Len(); j++ {
-				v.validateAttributes(field.Index(j).Interface(), rules, fullKey+"[*]")
-			}
-
-		default:
-			if rule, ok := rules[fullKey]; ok {
-				v.object = val
-				v.compileRuleSet(fullKey, field, v.resolveRuleComponents(rule))
-			}
-		}
-	}
 }
 
 func (v *Validator) Errors() Errors {
@@ -192,18 +121,6 @@ func (v *Validator) ensureRuleExists(rule string) bool {
 	return slices.Contains(defaultRules, rule)
 }
 
-// func (v *Validator) resolveKeyBasedOnJsonTag(field reflect.Type, index int) string {
-// 	return strings.Split(field.Field(index).Tag.Get("json"), ",")[0]
-// }
-
-func (v *Validator) resolveKeyBasedOnJsonTag(f reflect.StructField) string {
-	tag := f.Tag.Get("json")
-	if tag == "" || tag == "-" {
-		return ""
-	}
-	return strings.Split(tag, ",")[0]
-}
-
 func (v *Validator) resolveRuleComponents(data any) []string {
 	mixedData, ok := data.([]any)
 	if ok {
@@ -231,12 +148,22 @@ func (v *Validator) resolveRuleComponents(data any) []string {
 	return strings.Split(data.(string), "|")
 }
 
-func (v *Validator) compileRuleSet(key string, value reflect.Value, rules []string) {
+func (v *Validator) compileRuleSet(key string, value reflect.Value, present bool, rules []string) {
 	v.sometimes = slices.Contains(rules, "sometimes")
 	v.canBail = slices.Contains(rules, "bail")
+	hasRequired := slices.Contains(rules, "required")
 	rules = slices.DeleteFunc(rules, func(cmp string) bool {
 		return cmp == "sometimes" || cmp == "bail"
 	})
+
+	// Absent or null attribute: fail "required" (unless guarded by "sometimes"),
+	// then skip the remaining rules — they have no value to act on.
+	if !present || !value.IsValid() {
+		if hasRequired && !v.sometimes {
+			v.record(key, v.messages(key, "required", ""))
+		}
+		return
+	}
 
 	for _, rule := range rules {
 		if v.stopOnFirstFailure {
@@ -341,7 +268,7 @@ func (v *Validator) evaluateMultipleValueRule(key, rule string, value reflect.Va
 	}
 
 	if rule == "required_if" {
-		siblingValue, e := getFieldValueByJSONTag(v.object, attributes[0])
+		siblingValue, e := v.sibling(attributes[0])
 		if !e {
 			return
 		}
@@ -433,28 +360,24 @@ func (v *Validator) resolveMessages() map[string]any {
 	return locale.EnglishMessages()
 }
 
-func getFieldValueByJSONTag(v reflect.Value, tag string) (string, bool) {
-	// If v is a pointer, resolve it
-	if v.Kind() == reflect.Ptr {
-		v = v.Elem()
-	}
-
-	if v.Kind() != reflect.Struct {
+// sibling resolves another attribute's value from the data source as a string,
+// for cross-field rules such as required_if. Works for both struct and map.
+func (v *Validator) sibling(name string) (string, bool) {
+	if v.src == nil {
 		return "", false
 	}
-
-	t := v.Type()
-	for i := 0; i < t.NumField(); i++ {
-		field := t.Field(i)
-		jsonTag := field.Tag.Get("json")
-		// Handle omitempty etc.
-		jsonTag = strings.Split(jsonTag, ",")[0]
-
-		if jsonTag == tag {
-			return v.Field(i).String(), true
-		}
+	val, ok := v.src.get(name)
+	if !ok || !val.IsValid() {
+		return "", false
 	}
-	return "", false
+	val = unwrapValue(val)
+	if !val.IsValid() {
+		return "", false
+	}
+	if val.Kind() == reflect.String {
+		return val.String(), true
+	}
+	return fmt.Sprintf("%v", val.Interface()), true
 }
 
 func getDataTypeUsingReflection(value reflect.Value) string {
