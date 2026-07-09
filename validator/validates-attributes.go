@@ -3,6 +3,7 @@ package validator
 import (
 	"context"
 	"fmt"
+	"log"
 	"reflect"
 	"slices"
 	"strconv"
@@ -176,7 +177,18 @@ func (va *ValidatesAttributes) validateDatabaseRules(key, rule string, attribute
 func (va *ValidatesAttributes) validateExists(key string, attributes []string, rule string, value reflect.Value) bool {
 	va.requireParameterCount(1, attributes, rule)
 
-	count := newDatabaseRule(va.ctx, key, attributes, value).getCount()
+	dbRule := newDatabaseRule(va.ctx, key, attributes, value)
+
+	// `exists` has no ignore segment, so any extra attribute is a where clause.
+	if len(attributes) > 2 && attributes[2] != "" {
+		dbRule.addWheres(splitWheres(attributes[2:]))
+	}
+
+	count, err := dbRule.getCount()
+	if err != nil {
+		log.Println(err)
+		return false
+	}
 
 	return count > 0
 }
@@ -186,17 +198,50 @@ func (va *ValidatesAttributes) validateUnique(key string, attributes []string, r
 
 	dbRule := newDatabaseRule(va.ctx, key, attributes, value)
 
-	contrainsts := attributes[2:]
+	var contrainsts []string
+	if len(attributes) > 2 {
+		contrainsts = attributes[2:]
+	}
+
 	if len(contrainsts) >= 2 {
 		dbRule.ignore(contrainsts[0], contrainsts[1])
 
 		if len(contrainsts[2:]) > 0 {
-			wheres := splitWheres(contrainsts[2:])
-			return dbRule.addWheres(wheres).getCount() == 0
+			dbRule.addWheres(splitWheres(contrainsts[2:]))
 		}
 	}
 
-	return dbRule.getCount() == 0
+	count, err := dbRule.getCount()
+	if err != nil {
+		log.Println(err)
+		return false
+	}
+
+	return count == 0
+}
+
+// validateDatabaseRuleBuilder runs an `exists`/`unique` rule that arrived as a
+// fluent builder, keeping its clauses as structured data.
+func (va *ValidatesAttributes) validateDatabaseRuleBuilder(key string, builder dbRuleBuilder, value reflect.Value) bool {
+	dbRule := newDatabaseRule(va.ctx, key, []string{builder.table(), builder.column()}, value)
+
+	if ignoreValue, ignoreColumn := builder.ignoreSpec(); ignoreValue != nil {
+		dbRule.ignore(ignoreValue, ignoreColumn)
+	}
+
+	dbRule.addClauses(builder.clauses())
+
+	count, err := dbRule.getCount()
+	if err != nil {
+		log.Println(err)
+		return false
+	}
+
+	if builder.ruleName() == "exists" {
+		return count > 0
+	}
+
+	return count == 0
 }
 
 // Require a certain number of parameters to be present.

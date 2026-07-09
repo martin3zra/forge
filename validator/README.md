@@ -58,6 +58,44 @@ func (CreateUser) Messages() map[string]string {
 }
 ```
 
+## Database rules
+
+`exists` and `unique` accept a fluent builder that adds where-clauses to the lookup. Use it to scope a row to the tenant that owns it, so `exists:tax_receipts,id` cannot match a receipt belonging to another company:
+
+```go
+var r validator.Rule
+
+map[string]any{
+    "tax_receipt_id": []any{
+        "required",
+        r.Exists("tax_receipts", "id").
+            Where("company_id", companyID).
+            WhereNull("deleted_at"),
+    },
+    "email": []any{
+        "required", "email",
+        r.Unique("users", "email").
+            Where("company_id", companyID).
+            Ignore(user.ID, "id"),
+    },
+}
+```
+
+Both builders support `Where(column, value)`, `WhereNull(column)`, `WhereNotNull(column)` and `WhereIn(column, values...)`; `Unique` adds `Ignore(value, column)`. When `Exists` is given no column, the field's `json` key is used — the same shorthand as the `exists:users` rule string.
+
+Inside a `support.FormRequest`, the request context is populated before `Rules()` runs, so `f.Context()` and `f.User()` are available when building the clauses. Wrap the repetition in one helper rather than threading the tenant id through every rule:
+
+```go
+type ScopedRequest struct{ support.FormRequest }
+
+func (f *ScopedRequest) exists(table string, column ...string) *validator.Exists {
+    return validator.Rule{}.Exists(table, column...).
+        Where("company_id", tenant.From(f.Context()))
+}
+```
+
+Values passed to the builder become bound query parameters, so any type the driver understands works — including `uuid.UUID`. The equivalent rule *strings* (`exists:table,column`, `unique:table,column`) still work, but they encode clause values into the rule text and so cannot carry a value containing `,`, `:`, `|`, `^` or `__`, nor express `IS NULL`/`IN`. Prefer the builder.
+
 ## Conditional rules
 
 ```go

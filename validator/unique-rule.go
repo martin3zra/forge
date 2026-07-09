@@ -11,26 +11,38 @@ func (r Rule) Unique(table string, column ...string) *Unique {
 		c = column[0]
 	}
 	u := &Unique{
-		table:  table,
-		column: c,
+		tableName:  table,
+		columnName: c,
 	}
 
 	return u
 }
 
 type Unique struct {
-	table    string
-	column   string
-	ignore   any
-	idColumn string
-	wheres   map[string]any
+	tableName  string
+	columnName string
+	ignore     any
+	idColumn   string
+	wheres     []clause
 }
 
 func (u *Unique) Where(column string, value any) *Unique {
-	if u.wheres == nil {
-		u.wheres = make(map[string]any)
-	}
-	u.wheres[column] = value
+	u.wheres = append(u.wheres, clause{column: column, op: opEq, values: []any{value}})
+	return u
+}
+
+func (u *Unique) WhereNull(column string) *Unique {
+	u.wheres = append(u.wheres, clause{column: column, op: opIsNull})
+	return u
+}
+
+func (u *Unique) WhereNotNull(column string) *Unique {
+	u.wheres = append(u.wheres, clause{column: column, op: opIsNotNull})
+	return u
+}
+
+func (u *Unique) WhereIn(column string, values ...any) *Unique {
+	u.wheres = append(u.wheres, clause{column: column, op: opIn, values: values})
 	return u
 }
 
@@ -52,20 +64,28 @@ func (u Unique) Constraints() string {
 	}
 
 	return strings.TrimRight(fmt.Sprintf("unique:%s,%s,%s,%s,%s",
-		u.table,
-		u.column,
+		u.tableName,
+		u.columnName,
 		addslashes(ignore),
 		u.idColumn,
-		u.formatWheres(),
+		formatWheres(u.wheres),
 	), ",")
 }
 
-func (u Unique) formatWheres() string {
-	wheres := ""
-	for c, v := range u.wheres {
-		wheres += fmt.Sprintf("%s__%v^", c, v)
+func (u Unique) ruleName() string { return "unique" }
+
+func (u Unique) table() string { return u.tableName }
+
+func (u Unique) column() string { return u.columnName }
+
+func (u Unique) clauses() []clause { return u.wheres }
+
+func (u Unique) ignoreSpec() (any, string) {
+	if u.ignore == nil {
+		return nil, ""
 	}
-	return strings.TrimRight(wheres, "^")
+
+	return u.ignore, u.idColumn
 }
 
 func addslashes(s string) string {
