@@ -184,3 +184,47 @@ func main() {
     fmt.Println("Server starting on port :8080")
     log.Fatal(http.ListenAndServe(":8080", r))
 }
+```
+
+## Request-driven filtering with playsql
+
+`Context.QueryValues()` returns `url.Values`, which is exactly what playsql's
+`ApplyFilters` consumes — so a list endpoint can translate query params into
+query constraints with no glue code. Declare the allowed filters per model as a
+`playsql.FilterMap` (keyed by query-param name); only keys present in the request
+are applied, unknown keys are ignored.
+
+```go
+// Declared once, next to the model.
+type LessonFilters struct{}
+
+func (LessonFilters) Filters() playsql.FilterMap {
+    return playsql.FilterMap{
+        "difficulty": func(b *playsql.Builder, v playsql.FilterValue) {
+            b.WhereEq("difficulty", v.String())
+        },
+        "id": func(b *playsql.Builder, v playsql.FilterValue) {
+            b.WhereIn("id", v.CSVInts()...) // ?id=1,2,3
+        },
+        "age": func(b *playsql.Builder, v playsql.FilterValue) {
+            op, n := v.OperatorInt() // ?age=>=30 -> ">=", 30
+            b.Where("age", op, n)
+        },
+        "search": func(b *playsql.Builder, v playsql.FilterValue) {
+            b.Where("title", "LIKE", "%"+v.String()+"%")
+        },
+    }
+}
+
+// GET /lessons?difficulty=hard&age=>=30&search=go
+r.GET("/lessons", func(ctx *routing.Context) {
+    lessons, err := playsql.Query[Lesson](db).
+        ApplyFilters(ctx.QueryValues(), LessonFilters{}).
+        Get(ctx.Request.Context())
+    if err != nil {
+        ctx.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+        return
+    }
+    ctx.JSON(http.StatusOK, lessons)
+})
+```
