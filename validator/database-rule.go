@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/martin3zra/forge/database"
+	"github.com/martin3zra/playsql/grammar"
 )
 
 type DatabaseRule struct {
@@ -16,6 +17,7 @@ type DatabaseRule struct {
 	attributes       []string
 	clauses          []clause
 	db               *sql.DB
+	grammar          grammar.Grammar
 	ignoreGivenValue any
 	ignoreColumn     string
 	whereValues      []any
@@ -101,13 +103,14 @@ func (d *DatabaseRule) compileSqlStatement() string {
 	placeholder := 2
 
 	var stmt strings.Builder
-	fmt.Fprintf(&stmt, "select count(*) from %s where %s = $1",
+	fmt.Fprintf(&stmt, "select count(*) from %s where %s = %s",
 		d.resolveTableName(),
 		d.resolveColumnName(),
+		d.grammar.Placeholder(1),
 	)
 
 	if d.hasIgnore() {
-		fmt.Fprintf(&stmt, " and %s <> $%d", d.ignoreColumn, placeholder)
+		fmt.Fprintf(&stmt, " and %s <> %s", d.ignoreColumn, d.grammar.Placeholder(placeholder))
 		placeholder++
 	}
 
@@ -126,7 +129,7 @@ func (d *DatabaseRule) compileSqlStatement() string {
 
 			placeholders := make([]string, 0, len(where.values))
 			for _, value := range where.values {
-				placeholders = append(placeholders, fmt.Sprintf("$%d", placeholder))
+				placeholders = append(placeholders, d.grammar.Placeholder(placeholder))
 				d.whereValues = append(d.whereValues, value)
 				placeholder++
 			}
@@ -136,7 +139,7 @@ func (d *DatabaseRule) compileSqlStatement() string {
 				continue
 			}
 
-			fmt.Fprintf(&stmt, " and %s = $%d", where.column, placeholder)
+			fmt.Fprintf(&stmt, " and %s = %s", where.column, d.grammar.Placeholder(placeholder))
 			d.whereValues = append(d.whereValues, where.values[0])
 			placeholder++
 		}
@@ -150,6 +153,15 @@ func (d *DatabaseRule) resolveConnection(ctx context.Context) {
 
 	if d.db == nil {
 		panic("database connection need to be set.")
+	}
+
+	dialect, _ := ctx.Value(database.DialectKey{}).(string)
+	if dialect == "" {
+		dialect = "postgres"
+	}
+	d.grammar = grammar.For(dialect)
+	if d.grammar == nil {
+		panic(fmt.Sprintf("validator: unsupported dialect %q", dialect))
 	}
 }
 

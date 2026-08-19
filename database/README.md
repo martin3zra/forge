@@ -1,6 +1,8 @@
 # database
 
-Thin helpers over `database/sql`. Postgres is assumed (`$1` placeholders, `lib/pq`).
+Thin helpers over `database/sql`. Query building for SQLite/Postgres/MySQL goes
+through [`playsql`](https://github.com/martin3zra/playsql); code in this
+package (and `PrepareBulkInsert` below) still assumes Postgres `$1` placeholders.
 
 ## Connection in context
 
@@ -8,9 +10,13 @@ forge passes the DB through `context.Context` keyed by an empty struct:
 
 ```go
 ctx = context.WithValue(ctx, database.ConnectionKey{}, db)
+ctx = context.WithValue(ctx, database.DialectKey{}, "postgres") // "postgres" | "mysql" | "sqlite"
 ```
 
-`auth.NewAuth(ctx)` and other packages read it back from here.
+`auth.NewAuth(ctx)` and other packages read the connection back from here.
+`DialectKey` is for code that builds SQL by hand instead of going through
+playsql's `Builder` (e.g. `validator`'s dynamic exists/unique rules) — it picks
+the right placeholder style via `playsql/grammar.For(dialect)`.
 
 ## Querier
 

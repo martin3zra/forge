@@ -3,16 +3,21 @@ package validator
 import (
 	"reflect"
 	"testing"
+
+	"github.com/martin3zra/playsql/grammar"
 )
 
 // newTestRule builds a DatabaseRule without touching resolveConnection, so the
-// SQL compiler can be exercised without a database.
+// SQL compiler can be exercised without a database. Every expected SQL string
+// in this file assumes Postgres $N placeholders, so grammar is set directly
+// to match what resolveConnection would otherwise resolve.
 func newTestRule(key string, attributes []string, value any) *DatabaseRule {
 	return &DatabaseRule{
 		key:            key,
 		attributes:     attributes,
 		attributeValue: reflect.ValueOf(value),
 		clauses:        make([]clause, 0),
+		grammar:        grammar.For("postgres"),
 	}
 }
 
