@@ -9,7 +9,7 @@ import (
 	"slices"
 
 	"github.com/martin3zra/forge/foundation"
-	"github.com/romsar/gonertia/v2"
+	"github.com/romsar/gonertia/v3"
 )
 
 type PermissionKey struct{}

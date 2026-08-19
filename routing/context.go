@@ -20,7 +20,7 @@ import (
 	"github.com/martin3zra/forge/auth"
 	"github.com/martin3zra/forge/foundation"
 	"github.com/martin3zra/forge/session"
-	"github.com/romsar/gonertia/v2"
+	"github.com/romsar/gonertia/v3"
 )
 
 // Context wraps request and response and provides helper methods.
