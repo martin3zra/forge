@@ -1,6 +1,7 @@
 # cache
 
-A small key/value cache abstraction with a Postgres-backed implementation.
+A small key/value cache abstraction, backed by playsql so it works unchanged
+across SQLite, Postgres, and MySQL.
 
 ## Interface
 
@@ -12,12 +13,12 @@ type Cache interface {
 }
 ```
 
-## Postgres store
+## SQL store
 
-`NewPgCache(q database.Querier)` stores entries in a `preview_cache (key, payload, updated_at)` table, upserting on `key`. Accepts any `database.Querier`, so it works with a `*sql.DB` or a transaction.
+`NewSQLCache(db *playsql.DB)` stores entries in a `preview_cache (key, payload, updated_at)` table, upserting on `key`.
 
 ```go
-c := cache.NewPgCache(db)
+c := cache.NewSQLCache(db)
 ```
 
 ## Remember

@@ -177,7 +177,17 @@ func (m Mailer) sendViaSMTP(mailable Mailable) {
 	}
 
 	addr := fmt.Sprintf("%s:%s", m.cfg.Host, m.cfg.Port)
-	err := smtp.SendMail(addr, smtp.PlainAuth("", m.cfg.Username, m.cfg.Password, m.cfg.Host), m.cfg.FromAddress, []string{m.to.Email}, msg.Bytes())
+
+	// PlainAuth refuses to run over a non-TLS connection to anything but
+	// localhost, even if the server advertises AUTH (e.g. a MailHog instance
+	// reached over Tailscale). Omit it when no credentials are configured
+	// instead of tripping that refusal for servers that don't need auth.
+	var auth smtp.Auth
+	if m.cfg.Username != "" {
+		auth = smtp.PlainAuth("", m.cfg.Username, m.cfg.Password, m.cfg.Host)
+	}
+
+	err := smtp.SendMail(addr, auth, m.cfg.FromAddress, []string{m.to.Email}, msg.Bytes())
 	if err != nil {
 		log.Fatalf("failed to send email: %v", err)
 	}

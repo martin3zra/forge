@@ -5,10 +5,10 @@ Authentication that never hardcodes your user schema. The framework owns the con
 ## Wiring (once, at boot)
 
 ```go
-auth.SetCredentialResolver(func(db *sql.DB, column string, value any) (foundation.Authenticatable, error) {
-    // SELECT ... WHERE <column> = value, scan into your User type
+auth.SetCredentialResolver(func(db *playsql.DB, column string, value any) (foundation.Authenticatable, error) {
+    // db.Model(&yourRow{}).WhereEq(column, value).First(ctx, &row), map to your User type
 })
-auth.SetPasswordResolver(func(db *sql.DB, userID int) (string, error) {
+auth.SetPasswordResolver(func(db *playsql.DB, userID int) (string, error) {
     // current password hash for userID
 })
 auth.SetUserDecoder(func(ctx context.Context) foundation.Authenticatable {
@@ -20,7 +20,7 @@ Calling an `Auth` method before its resolver is registered returns an error rath
 
 ## Per-request
 
-`NewAuth(ctx)` pulls `*sql.DB` from the context under `database.ConnectionKey{}` — it **panics if the connection is absent**, so ensure your DB middleware runs first.
+`NewAuth(ctx)` pulls `*playsql.DB` from the context under `database.PlaysqlKey{}` — it **panics if the connection is absent**, so ensure your DB middleware runs first.
 
 ```go
 a := auth.NewAuth(ctx)

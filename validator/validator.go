@@ -121,39 +121,66 @@ func (v *Validator) ensureRuleExists(rule string) bool {
 	return slices.Contains(defaultRules, rule)
 }
 
-func (v *Validator) resolveRuleComponents(data any) []string {
-	mixedData, ok := data.([]any)
-	if ok {
-		rules := make([]string, 0)
-		for index := range mixedData {
-			switch attributes := mixedData[index].(type) {
-			case ConditionalRules:
-				rules = append(rules, strings.Split(attributes.Constraints(), "|")...)
-			case RuleConstraints:
-				rules = append(rules, strings.Split(attributes.Constraints(), "|")...)
-			case string:
-				rules = append(rules, strings.Split(attributes, "|")...)
-			default:
-				fmt.Println("Field rules not supported!")
-			}
-		}
-		return rules
+func (v *Validator) resolveKeyBasedOnJsonTag(f reflect.StructField) string {
+	tag := f.Tag.Get("json")
+	if tag == "" || tag == "-" {
+		return ""
 	}
-
-	ruleContractValue, ok := data.(RuleConstraints)
-	if ok {
-		return strings.Split(ruleContractValue.Constraints(), "|")
-	}
-
-	return strings.Split(data.(string), "|")
+	return strings.Split(tag, ",")[0]
 }
 
-func (v *Validator) compileRuleSet(key string, value reflect.Value, present bool, rules []string) {
-	v.sometimes = slices.Contains(rules, "sometimes")
-	v.canBail = slices.Contains(rules, "bail")
-	hasRequired := slices.Contains(rules, "required")
-	rules = slices.DeleteFunc(rules, func(cmp string) bool {
-		return cmp == "sometimes" || cmp == "bail"
+// resolveRuleComponents flattens a field's rule set into individual rules. A
+// rule is either a string token or a dbRuleBuilder, which is carried through as
+// an object so that its clauses survive intact.
+func (v *Validator) resolveRuleComponents(data any) []any {
+	switch attributes := data.(type) {
+	case []any:
+		rules := make([]any, 0, len(attributes))
+		for index := range attributes {
+			rules = append(rules, v.resolveRuleComponents(attributes[index])...)
+		}
+		return rules
+	case dbRuleBuilder:
+		return []any{attributes}
+	case ConditionalRules:
+		return splitRuleTokens(attributes.Constraints())
+	case RuleConstraints:
+		return splitRuleTokens(attributes.Constraints())
+	case string:
+		return splitRuleTokens(attributes)
+	default:
+		fmt.Println("Field rules not supported!")
+		return nil
+	}
+}
+
+func splitRuleTokens(rules string) []any {
+	parts := strings.Split(rules, "|")
+	tokens := make([]any, 0, len(parts))
+	for _, part := range parts {
+		tokens = append(tokens, part)
+	}
+
+	return tokens
+}
+
+func containsRuleToken(rules []any, token string) bool {
+	for _, rule := range rules {
+		if name, ok := rule.(string); ok && name == token {
+			return true
+		}
+	}
+
+	return false
+}
+
+func (v *Validator) compileRuleSet(key string, value reflect.Value, present bool, rules []any) {
+	v.sometimes = containsRuleToken(rules, "sometimes")
+	v.canBail = containsRuleToken(rules, "bail")
+	hasRequired := containsRuleToken(rules, "required")
+	rules = slices.DeleteFunc(rules, func(cmp any) bool {
+		name, ok := cmp.(string)
+		return ok && (name == "sometimes" || name == "bail")
 	})
 
 	// Absent or null attribute: fail "required" (unless guarded by "sometimes"),
@@ -165,22 +192,29 @@ func (v *Validator) compileRuleSet(key string, value reflect.Value, present bool
 		return
 	}
 
-	for _, rule := range rules {
+	for _, entry := range rules {
 		if v.stopOnFirstFailure {
 			v.shouldStopOnFirstFailure(false)
 			break
 		}
-		// v.needsToIgnore = false
+
+		if builder, ok := entry.(dbRuleBuilder); ok {
+			if v.sometimes && value.IsZero() {
+				break
+			}
+
+			v.evaluateDatabaseRuleBuilder(key, builder, value)
+			continue
+		}
+
+		rule, ok := entry.(string)
+		if !ok {
+			continue
+		}
+
 		ruleComponents := strings.Split(rule, ":")
 
-		rule := ruleComponents[0]
-		// prepends := strings.Split(rule, ".")
-
-		// if len(prepends) > 1 {
-		// 	v.needsToIgnore = prepends[1] == "ignore"
-		// 	rule = prepends[0]
-		// 	ruleComponents[0] = rule
-		// }
+		rule = ruleComponents[0]
 
 		if v.ensureRuleExists(rule) {
 			if v.sometimes && value.IsZero() {
@@ -194,6 +228,12 @@ func (v *Validator) compileRuleSet(key string, value reflect.Value, present bool
 
 			v.evaluateSingleRule(key, ruleComponents[0], value)
 		}
+	}
+}
+
+func (v *Validator) evaluateDatabaseRuleBuilder(key string, builder dbRuleBuilder, value reflect.Value) {
+	if !v.validateDatabaseRuleBuilder(key, builder, value) {
+		v.record(key, v.messages(key, builder.ruleName(), value.Kind().String(), builder.table()))
 	}
 }
 

@@ -170,12 +170,54 @@ func TestUniqueRule(t *testing.T) {
 			validator.Rule{}.
 				Unique("users", "email").
 				Where("id", 1).
-				Where("current_company_id", 1).
+				WhereNull("deleted_at").
 				Ignore(person.Email, "email"), //"unique.ignore:users,email",
 		},
 	})
 	if len(valid.Errors()) > 0 {
 		t.Errorf("validation fails:\n %v", valid.Errors())
+	}
+}
+
+// A scoped exists rule must only match rows that satisfy every clause.
+func TestExistsRuleWithClauses(t *testing.T) {
+	person := Person{
+		Email: "martin3zra@gmail.com",
+	}
+
+	db, err := sql.Open("postgres", "host=localhost port=5433 dbname=acme user=postgres password=secret sslmode=disable")
+	if err != nil {
+		t.Fail()
+	}
+
+	err = db.Ping()
+	if err != nil {
+		panic(err)
+	}
+
+	ctx := context.WithValue(context.Background(), database.ConnectionKey{}, db)
+
+	var matches = validator.Validator{}
+	matches.Validate(ctx, &person, map[string]any{
+		"email": []any{
+			"required",
+			validator.Rule{}.Exists("users", "email").WhereNull("deleted_at"),
+		},
+	})
+	if len(matches.Errors()) > 0 {
+		t.Errorf("expected the row to be found:\n %v", matches.Errors())
+	}
+
+	// The same row, scoped to an id it does not have, must not be found.
+	var scopedOut = validator.Validator{}
+	scopedOut.Validate(ctx, &person, map[string]any{
+		"email": []any{
+			"required",
+			validator.Rule{}.Exists("users", "email").Where("id", -1),
+		},
+	})
+	if len(scopedOut.Errors()) == 0 {
+		t.Error("expected the scoped exists rule to reject a row outside its scope")
 	}
 }
 

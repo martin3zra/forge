@@ -5,7 +5,7 @@ Server-side sessions with a pluggable store, CSRF protection, and flash/error ba
 ## Setup
 
 ```go
-store := session.NewDatabaseStore(db) // requires a "sessions" table
+store := session.NewDatabaseStore(db) // *playsql.DB; requires a "sessions" table
 mgr := session.NewSessionManager(
     store,
     1*time.Hour,    // gc interval

@@ -9,7 +9,7 @@ import (
 	"slices"
 
 	"github.com/martin3zra/forge/foundation"
-	"github.com/romsar/gonertia/v2"
+	"github.com/romsar/gonertia/v3"
 )
 
 type PermissionKey struct{}
@@ -212,42 +212,56 @@ func (r *Router) GroupPrefix(prefix string, fn func(rg *Router)) {
 	r.prefix = savedPrefix
 }
 
-// Group creates a temporary child router for grouping routes. It first saves the parent's
-// middleware and exclusion state, then creates a new child router that inherits those settings.
-// The group's callback registers routes on the child. After the callback returns, each route in
-// the child is pre-wrapped with the child's middleware chain (skipping those in its exclusion list),
-// and then merged back into the parent's route table. Finally, the parent's middleware state is restored.
+// Group creates a temporary child router for grouping routes, inheriting the
+// parent's current middleware chain with nothing extra scoped to this group.
+// Equivalent to GroupWithMiddleware(nil, fn); see that method for the details
+// of how middleware is scoped and why a plain WithMiddleware(x).Group(fn)
+// chain does not achieve the same scoping.
 func (r *Router) Group(fn func(rg *Router)) {
-	// Save parent's state.
-	savedMiddlewares := append([]Middleware{}, r.middlewares...)
-	savedExcluded := append([]Middleware{}, r.groupExcluded...)
+	r.GroupWithMiddleware(nil, fn)
+}
 
-	// Create a temporary child router.
-	// If the parent is already a grouped router, don't inherit parent's middlewares,
-	// so as to avoid re-wrapping them.
-	var childMiddlewares []Middleware
-	if r.isGroupedRouter {
-		childMiddlewares = []Middleware{}
-	} else {
-		childMiddlewares = append([]Middleware{}, r.middlewares...)
-	}
-	// Create a temporary child router.
+// GroupWithMiddleware creates a temporary child router for grouping routes,
+// scoping mws to exactly the routes registered inside fn — directly, or via
+// further nested Group/GroupWithMiddleware calls — without leaking onto
+// routes registered on r before or after this call.
+//
+// Prefer this over the r.WithMiddleware(mws...).Group(fn) chain: WithMiddleware
+// mutates r.middlewares in place, so by the time Group reads it, the mutation
+// has already happened and nothing is left to genuinely restore afterward —
+// mws ends up applied to every route r registers for the rest of its life,
+// including ones registered before this call in source order (they're only
+// pre-wrapped once their own enclosing Group's callback returns). Passing mws
+// as a parameter here means r.middlewares is never touched, so there's nothing
+// to leak or restore.
+func (r *Router) GroupWithMiddleware(mws []Middleware, fn func(rg *Router)) {
 	child := &Router{
-		routes:          []Route{},
-		prefix:          r.prefix,
-		middlewares:     childMiddlewares, //append([]Middleware{}, r.middlewares...),
+		routes: []Route{},
+		prefix: r.prefix,
+		// The child sees the parent's full chain plus whatever's scoped to this
+		// group. Routes are only ever wrapped once (see the Wrapped check below),
+		// so inheriting the whole chain here — rather than starting empty for
+		// already-grouped parents — no longer risks double-wrapping.
+		middlewares:     append(append([]Middleware{}, r.middlewares...), mws...),
 		groupExcluded:   append([]Middleware{}, r.groupExcluded...),
 		inertia:         r.inertia,
-		isGroupedRouter: true, // CHANGE: This is a grouped router.
+		resources:       r.resources,
+		isGroupedRouter: true,
 	}
 
 	// Execute the group's callback on the child router.
 	fn(child)
 
-	// Pre-wrap each route in the child router.
+	// Pre-wrap each route in the child router that isn't already wrapped. A
+	// route can already be wrapped here because child.routes includes ones
+	// merged in from a nested Group/GroupWithMiddleware call made inside fn —
+	// those were already given their correct (deeper) middleware chain by that
+	// nested call, and must not be wrapped a second time.
 	for i, route := range child.routes {
+		if route.Wrapped {
+			continue
+		}
 		effective := route.Handler
-		// Apply only the middleware added at this group level.
 		for j := len(child.middlewares) - 1; j >= 0; j-- {
 			mw := child.middlewares[j]
 			if middlewareExcluded(mw, route.Excluded) {
@@ -260,12 +274,9 @@ func (r *Router) Group(fn func(rg *Router)) {
 		child.routes[i].IsGrouped = true // Mark that this route comes from a group.
 	}
 
-	// Merge the child's routes back into the parent's route table.
+	// Merge the child's routes back into the parent's route table. r.middlewares
+	// and r.groupExcluded were never mutated, so there is nothing to restore.
 	r.routes = append(r.routes, child.routes...)
-
-	// Restore the parent's middleware and exclusion state.
-	r.middlewares = savedMiddlewares
-	r.groupExcluded = savedExcluded
 }
 
 // ServeHTTP implements the http.Handler interface.

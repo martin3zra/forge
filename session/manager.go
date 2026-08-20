@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/martin3zra/forge/foundation"
-	"github.com/romsar/gonertia/v2"
+	"github.com/romsar/gonertia/v3"
 )
 
 func NewSessionManager(

@@ -10,7 +10,7 @@ import (
 	"path"
 	"strings"
 
-	inertia "github.com/romsar/gonertia/v2"
+	inertia "github.com/romsar/gonertia/v3"
 )
 
 func InitInertia(assets, resources embed.FS, port string) *inertia.Inertia {

@@ -2,10 +2,11 @@ package cache
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
+	"errors"
+	"time"
 
-	"github.com/martin3zra/forge/database"
+	"github.com/martin3zra/playsql"
 )
 
 type Cache interface {
@@ -14,48 +15,55 @@ type Cache interface {
 	Delete(ctx context.Context, key string) error
 }
 
-type PgCache struct {
-	q database.Querier
+// UpdatedAt is stamped automatically by playsql's Upsert (any column named
+// exactly "updated_at" is set to time.Now() on every call) — that's the
+// desired behavior here, since Set should always refresh it.
+type cacheModel struct {
+	Key       string    `db:"key"`
+	Payload   []byte    `db:"payload"`
+	UpdatedAt time.Time `db:"updated_at"`
 }
 
-func NewPgCache(q database.Querier) *PgCache {
-	return &PgCache{q: q}
+func (cacheModel) TableName() string { return "preview_cache" }
+
+// SQLCache is a Cache backed by the preview_cache table, portable across every
+// dialect playsql supports.
+type SQLCache struct {
+	db *playsql.DB
 }
 
-func (c *PgCache) Get(ctx context.Context, key string) ([]byte, bool, error) {
-	var payload []byte
+func NewSQLCache(db *playsql.DB) *SQLCache {
+	return &SQLCache{db: db}
+}
 
-	err := c.q.QueryRowContext(ctx, `
-        SELECT payload
-        FROM preview_cache
-        WHERE key = $1
-    `, key).Scan(&payload)
-
-	if err == sql.ErrNoRows {
+func (c *SQLCache) Get(ctx context.Context, key string) ([]byte, bool, error) {
+	var row cacheModel
+	err := c.db.Model(&cacheModel{}).WhereEq("key", key).First(ctx, &row)
+	if errors.Is(err, playsql.ErrNotFound) {
 		return nil, false, nil
 	}
 	if err != nil {
 		return nil, false, err
 	}
 
-	return payload, true, nil
+	return row.Payload, true, nil
 }
 
-func (c *PgCache) Set(ctx context.Context, key string, value []byte) error {
-	_, err := c.q.ExecContext(ctx, `
-        INSERT INTO preview_cache (key, payload)
-        VALUES ($1, $2)
-        ON CONFLICT (key)
-        DO UPDATE SET payload = EXCLUDED.payload, updated_at = now()
-    `, key, value)
-
+func (c *SQLCache) Set(ctx context.Context, key string, value []byte) error {
+	_, err := c.db.Model(&cacheModel{}).Upsert(
+		ctx,
+		[]map[string]any{{
+			"key":     key,
+			"payload": value,
+		}},
+		[]string{"key"},
+		[]string{"payload", "updated_at"},
+	)
 	return err
 }
 
-func (c *PgCache) Delete(ctx context.Context, key string) error {
-	_, err := c.q.ExecContext(ctx, `
-        DELETE FROM preview_cache WHERE key = $1
-    `, key)
+func (c *SQLCache) Delete(ctx context.Context, key string) error {
+	_, err := c.db.Model(&cacheModel{}).WhereEq("key", key).Delete(ctx)
 	return err
 }
 

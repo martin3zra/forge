@@ -1,9 +1,10 @@
 package session
 
 import (
-	"database/sql"
 	"net/http"
 	"time"
+
+	"github.com/martin3zra/playsql"
 )
 
 type SessionContextKey struct{}
@@ -41,7 +42,7 @@ type SessionManager struct {
 }
 
 type DatabaseStore struct {
-	db *sql.DB
+	db *playsql.DB
 }
 
 type sessionResponseWriter struct {
