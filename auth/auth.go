@@ -2,22 +2,22 @@ package auth
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"log"
 
-	"github.com/martin3zra/forge/foundation"
 	"github.com/martin3zra/forge/database"
+	"github.com/martin3zra/forge/foundation"
+	"github.com/martin3zra/playsql"
 )
 
 type ContextUserID struct{}
 
 // CredentialResolver retrieves an identity by an arbitrary column/value pair.
 // The application registers it so auth never needs to know the user schema.
-type CredentialResolver func(db *sql.DB, column string, value any) (foundation.Authenticatable, error)
+type CredentialResolver func(db *playsql.DB, column string, value any) (foundation.Authenticatable, error)
 
 // PasswordResolver returns the stored password hash for a user id.
-type PasswordResolver func(db *sql.DB, userID int) (string, error)
+type PasswordResolver func(db *playsql.DB, userID int) (string, error)
 
 // UserDecoder rebuilds the authenticated identity from the request context.
 type UserDecoder func(ctx context.Context) foundation.Authenticatable
@@ -38,12 +38,12 @@ func SetPasswordResolver(r PasswordResolver) { passwordResolver = r }
 func SetUserDecoder(d UserDecoder) { userDecoder = d }
 
 type Auth struct {
-	db       *sql.DB
+	db       *playsql.DB
 	Hashable foundation.Hash
 }
 
 func NewAuth(ctx context.Context) *Auth {
-	db := ctx.Value(database.ConnectionKey{}).(*sql.DB)
+	db := ctx.Value(database.PlaysqlKey{}).(*playsql.DB)
 
 	if db == nil {
 		panic("database connection need to be set.")
