@@ -97,9 +97,17 @@ func (ctx *Context) Error(err error, status ...int) {
 
 	isProduction := os.Getenv("APP_ENV")
 	if slices.Contains([]string{"prod", "production"}, isProduction) {
+		// ctx.Render (via gonertia) always writes 200 itself, with no way to
+		// override it directly — wrap the writer so whichever call actually
+		// commits the response (an explicit WriteHeader, or an implicit one
+		// on first Write) uses the real status instead. Headers gonertia
+		// sets along the way (e.g. Content-Type) go through unmodified.
+		original := ctx.Response
+		ctx.Response = &statusOverrideWriter{ResponseWriter: original, status: defaultStatus}
 		ctx.Render("Error/Index", map[string]any{
 			"status": defaultStatus,
 		})
+		ctx.Response = original
 		return
 	}
 
@@ -121,6 +129,7 @@ func (ctx *Context) Error(err error, status ...int) {
 		return
 	}
 
+	ctx.Response.WriteHeader(defaultStatus)
 	tmplErr := tmpl.Execute(ctx.Response, data)
 	if tmplErr != nil {
 		log.Println(tmplErr.Error())
@@ -267,4 +276,29 @@ func (ctx *Context) mergeTranslations(pageTranslations map[string]string) map[st
 	}
 
 	return merged
+}
+
+// statusOverrideWriter forces the eventual response status to a fixed
+// value, however it's committed — an explicit WriteHeader call, or an
+// implicit 200 on the first Write. Used by Error's production path since
+// gonertia's Render has no way to take a status code directly.
+type statusOverrideWriter struct {
+	http.ResponseWriter
+	status int
+	wrote  bool
+}
+
+func (w *statusOverrideWriter) WriteHeader(int) {
+	if w.wrote {
+		return
+	}
+	w.wrote = true
+	w.ResponseWriter.WriteHeader(w.status)
+}
+
+func (w *statusOverrideWriter) Write(b []byte) (int, error) {
+	if !w.wrote {
+		w.WriteHeader(w.status)
+	}
+	return w.ResponseWriter.Write(b)
 }
