@@ -21,6 +21,10 @@ type MailDriver string
 const (
 	SMTP MailDriver = "smtp"
 	API  MailDriver = "api"
+	// Log dumps the composed email (recipients, subject, rendered HTML) to
+	// the log instead of sending it — no SMTP/API credentials needed, so
+	// it's a natural default for local dev and CI.
+	Log MailDriver = "log"
 )
 
 type Config struct {
@@ -69,12 +73,42 @@ func (m Mailer) To(email, name string) Mailer {
 }
 
 func (m Mailer) Send(mailable Mailable) {
-	if m.cfg.Driver == SMTP {
+	switch m.cfg.Driver {
+	case SMTP:
 		m.sendViaSMTP(mailable)
-		return
+	case Log:
+		m.sendViaLog(mailable)
+	default:
+		m.sendViaAPI(mailable)
+	}
+}
+
+// sendViaLog renders the email exactly as sendViaSMTP/sendViaAPI would
+// (same composeHTML call, same recipient list) and writes it to the log
+// instead of a wire — the full rendered HTML, not just a one-line notice,
+// so a dev can actually read what an email would have said.
+func (m Mailer) sendViaLog(mailable Mailable) {
+	to := []string{fmt.Sprintf("%s <%s>", m.to.Name, m.to.Email)}
+	for _, t := range mailable.To() {
+		to = append(to, fmt.Sprintf("%s <%s>", t.Name, t.Email))
 	}
 
-	m.sendViaAPI(mailable)
+	var body strings.Builder
+	fmt.Fprintf(&body, "\n----- mail (log driver) -----\n")
+	fmt.Fprintf(&body, "To:      %s\n", strings.Join(to, ", "))
+	fmt.Fprintf(&body, "From:    %s <%s>\n", m.cfg.FromName, m.cfg.FromAddress)
+	fmt.Fprintf(&body, "Subject: %s\n", mailable.Subject())
+	if attachments := mailable.Attachments(); len(attachments) > 0 {
+		names := make([]string, len(attachments))
+		for i, a := range attachments {
+			names[i] = a.Filename
+		}
+		fmt.Fprintf(&body, "Attachments: %s\n", strings.Join(names, ", "))
+	}
+	fmt.Fprintf(&body, "\n%s\n", m.composeHTML(mailable.Content(), mailable.Data()))
+	fmt.Fprintf(&body, "----- end mail -----\n")
+
+	log.Print(body.String())
 }
 
 func (m Mailer) sendViaAPI(mailable Mailable) {
