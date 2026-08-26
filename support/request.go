@@ -59,7 +59,7 @@ func ParseRequest(r *http.Request, body any, params ...map[string]string) error 
 			return errors.New(foundation.ToJSON(errorMesssages))
 		}
 
-		formRequest.PassedValidation()
+		formRequest.PassedValidation(formRequest.Validated())
 
 		return nil
 	}

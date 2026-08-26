@@ -3,6 +3,7 @@ package validator_test
 import (
 	"context"
 	"database/sql"
+	"reflect"
 	"testing"
 
 	"github.com/martin3zra/forge/database"
@@ -484,5 +485,154 @@ func TestWildcardSliceFailsMap(t *testing.T) {
 	})
 	if _, ok := v.Errors()["contacts.0.name"]; !ok {
 		t.Errorf("expected error at contacts.0.name, got: %v", v.Errors())
+	}
+}
+
+// ---------------------
+// Validated()
+// ---------------------
+
+// Only fields that appear in the rule set are reflected into Validated —
+// LastName has no rule and must not leak in, even though it has a value.
+func TestValidatedIncludesOnlyRuleCoveredFields(t *testing.T) {
+	person := Person{
+		Name:     "Jane",
+		LastName: "Doe",
+		Email:    "jane@example.com",
+	}
+
+	var v = validator.Validator{}
+	if ok := v.Validate(context.Background(), &person, map[string]any{
+		"name":  "required",
+		"email": "required|email",
+	}); !ok {
+		t.Fatalf("validation fails:\n %v", v.Errors())
+	}
+
+	want := map[string]any{"name": "Jane", "email": "jane@example.com"}
+	if got := v.Validated(); !reflect.DeepEqual(got, want) {
+		t.Errorf("Validated() = %#v, want %#v", got, want)
+	}
+}
+
+// Dotted and "*"-wildcard rule keys reconstruct into the original nested
+// shape — a map for "address.line", a slice of maps for "contacts.*.name" —
+// and fields with no rule (Phone, Age) are excluded from each nested item.
+func TestValidatedNestedAndWildcardFields(t *testing.T) {
+	person := Person{
+		Email:   "jane@example.com",
+		Address: Address{Line: "C/Mama Tingo"},
+		Contacts: []Contact{
+			{Name: "Natasha Martinez Garcia", Phone: "8099879235", Age: 23},
+			{Name: "Massiel Natali Garcia", Phone: "8099879232", Age: 18},
+		},
+	}
+
+	var v = validator.Validator{}
+	if ok := v.Validate(context.Background(), &person, map[string]any{
+		"email":           "required|email",
+		"address.line":    "required",
+		"contacts.*.name": "required",
+	}); !ok {
+		t.Fatalf("validation fails:\n %v", v.Errors())
+	}
+
+	want := map[string]any{
+		"email":   "jane@example.com",
+		"address": map[string]any{"line": "C/Mama Tingo"},
+		"contacts": []any{
+			map[string]any{"name": "Natasha Martinez Garcia"},
+			map[string]any{"name": "Massiel Natali Garcia"},
+		},
+	}
+	if got := v.Validated(); !reflect.DeepEqual(got, want) {
+		t.Errorf("Validated() = %#v, want %#v", got, want)
+	}
+}
+
+// A non-nil pointer field is dereferenced to its underlying value; a nil
+// pointer is excluded entirely, the same way an absent field is.
+func TestValidatedDereferencesPointersAndExcludesNil(t *testing.T) {
+	type Form struct {
+		Nickname *string `json:"nickname"`
+		Notes    *string `json:"notes"`
+	}
+	nickname := "JD"
+	form := Form{Nickname: &nickname}
+
+	var v = validator.Validator{}
+	if ok := v.Validate(context.Background(), &form, map[string]any{
+		"nickname": "sometimes",
+		"notes":    "sometimes",
+	}); !ok {
+		t.Fatalf("validation fails:\n %v", v.Errors())
+	}
+
+	want := map[string]any{"nickname": "JD"}
+	if got := v.Validated(); !reflect.DeepEqual(got, want) {
+		t.Errorf("Validated() = %#v, want %#v", got, want)
+	}
+}
+
+// map[string]any input works the same way as a struct: only rule-covered
+// keys are reflected, nested paths are rebuilt, and unrelated sibling keys
+// (both top-level and nested) are excluded.
+func TestValidatedMapSource(t *testing.T) {
+	data := map[string]any{
+		"name":  "Jane",
+		"email": "jane@example.com",
+		"extra": "should not appear",
+		"address": map[string]any{
+			"line": "C/Mama Tingo 123",
+			"city": "should not appear either",
+		},
+	}
+
+	var v = validator.Validator{}
+	if ok := v.Validate(context.Background(), data, map[string]any{
+		"name":         "required",
+		"address.line": "required",
+	}); !ok {
+		t.Fatalf("validation should pass:\n %v", v.Errors())
+	}
+
+	want := map[string]any{
+		"name":    "Jane",
+		"address": map[string]any{"line": "C/Mama Tingo 123"},
+	}
+	if got := v.Validated(); !reflect.DeepEqual(got, want) {
+		t.Errorf("Validated() = %#v, want %#v", got, want)
+	}
+}
+
+// A "sometimes" field absent from a map source is skipped entirely, so it
+// must not appear in Validated either.
+func TestValidatedExcludesAbsentSometimesMapKey(t *testing.T) {
+	var v = validator.Validator{}
+	if ok := v.Validate(context.Background(), map[string]any{"age": 20.0}, map[string]any{
+		"email": "sometimes|email",
+		"age":   "required|gte:20",
+	}); !ok {
+		t.Fatalf("validation should pass:\n %v", v.Errors())
+	}
+
+	want := map[string]any{"age": 20}
+	if got := v.Validated(); !reflect.DeepEqual(got, want) {
+		t.Errorf("Validated() = %#v, want %#v", got, want)
+	}
+}
+
+// Validated must not surface partial/stale data from a failed run.
+func TestValidatedIsNilWhenValidationFails(t *testing.T) {
+	var v = validator.Validator{}
+	if ok := v.Validate(context.Background(), map[string]any{"age": 20.0}, map[string]any{
+		"name": "required",
+		"age":  "required",
+	}); ok {
+		t.Fatalf("expected validation to fail")
+	}
+
+	if got := v.Validated(); got != nil {
+		t.Errorf("Validated() = %#v, want nil after a failed validation", got)
 	}
 }

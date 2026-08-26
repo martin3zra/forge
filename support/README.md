@@ -35,6 +35,8 @@ func (r StorePost) Authorize() bool {
 func (r StorePost) Messages() map[string]string { return nil }
 ```
 
-Lifecycle hooks mirror Laravel: `Authorize()`, `Rules()`, `Messages()`, `PrepareForValidation()`, `PassedValidation()`. On `SetContext`, the authenticated user (`auth.User`) and a validator instance are attached; `SetPathParams` exposes route params via `Param(key)`.
+Lifecycle hooks mirror Laravel: `Authorize()`, `Rules()`, `Messages()`, `PrepareForValidation()`, `PassedValidation(validated map[string]any)`. On `SetContext`, the authenticated user (`auth.User`) and a validator instance are attached; `SetPathParams` exposes route params via `Param(key)`.
 
 When validation fails, errors are flashed into the session (`FormErrors`) and surfaced through `Errors()`.
+
+When validation passes, `Validated()` returns the subset of the request that had a rule attached — nested back into the original dot/wildcard shape, pointers dereferenced, absent fields excluded (see `validator.Validator.Validated`). The same map is handed to `PassedValidation`, so overriding it can mutate the map in place (add computed fields, strip ones you don't want a caller to see) before the controller reads it back via `r.Validated()`.

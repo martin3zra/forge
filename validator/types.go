@@ -60,9 +60,11 @@ type RuleContract interface {
 
 type Validator struct {
 	ValidatesAttributes
-	errors   Errors
-	language *string
-	src      source
+	errors        Errors
+	language      *string
+	src           source
+	validated     map[string]any
+	validatedFlat map[string]any
 }
 
 type ConditionalRules struct {

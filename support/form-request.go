@@ -10,11 +10,12 @@ import (
 
 type FormRequestContract interface {
 	PrepareForValidation()
-	PassedValidation()
+	PassedValidation(validated map[string]any)
 	Authorize() bool
 	Validate(object any, rules map[string]any, prepareForValidation func()) validator.Validator
 	Rules() map[string]any
 	Errors() validator.Errors
+	Validated() map[string]any
 	SetContext(ctx context.Context)
 	Context() context.Context
 	User() foundation.Authenticatable
@@ -81,6 +82,14 @@ func (f *FormRequest) Errors() validator.Errors {
 	return f.validator.Errors()
 }
 
+// Validated returns the subset of the request body that was covered by
+// Rules() and present in the input — see validator.Validator.Validated. Any
+// mutation PassedValidation makes to the map it receives is visible here
+// too, since maps are reference types.
+func (f *FormRequest) Validated() map[string]any {
+	return f.validator.Validated()
+}
+
 func (f *FormRequest) Rules() map[string]any {
 	return map[string]any{}
 }
@@ -89,7 +98,7 @@ func (f *FormRequest) Authorize() bool { return true }
 
 func (f *FormRequest) PrepareForValidation() {}
 
-func (f *FormRequest) PassedValidation() {}
+func (f *FormRequest) PassedValidation(validated map[string]any) {}
 
 func (f *FormRequest) PassesAuthorization() bool { return true }
 

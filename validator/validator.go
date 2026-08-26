@@ -33,6 +33,10 @@ func (v *Validator) Validate(ctx context.Context, object any, rules map[string]a
 		}
 	}
 
+	if len(v.errors) == 0 {
+		v.validated = buildNested(v.validatedFlat)
+	}
+
 	return len(v.errors) == 0
 }
 
@@ -191,6 +195,8 @@ func (v *Validator) compileRuleSet(key string, value reflect.Value, present bool
 		}
 		return
 	}
+
+	v.recordValidated(key, value)
 
 	for _, entry := range rules {
 		if v.stopOnFirstFailure {
