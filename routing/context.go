@@ -18,8 +18,10 @@ import (
 	"text/template"
 
 	"github.com/martin3zra/forge/auth"
+	"github.com/martin3zra/forge/database"
 	"github.com/martin3zra/forge/foundation"
 	"github.com/martin3zra/forge/session"
+	"github.com/martin3zra/playsql"
 	"github.com/romsar/gonertia/v3"
 )
 
@@ -35,6 +37,20 @@ type Context struct {
 // User fetch user from Request Context
 func (c *Context) User() foundation.Authenticatable {
 	return auth.User(c.Request.Context())
+}
+
+// DB returns the *playsql.DB bound to the current request via
+// database.PlaysqlKey — the same key auth.NewAuth already reads, set once by
+// the application at server setup (see forge/database). It panics if none was
+// bound, matching NewAuth's existing convention for this same context value:
+// a missing DB is a startup/wiring bug, not a per-request condition to
+// recover from.
+func (c *Context) DB() *playsql.DB {
+	db, ok := c.Request.Context().Value(database.PlaysqlKey{}).(*playsql.DB)
+	if !ok || db == nil {
+		panic("routing: no *playsql.DB bound to request context (see forge/database.PlaysqlKey)")
+	}
+	return db
 }
 
 // Text writes plain text response with status code.
