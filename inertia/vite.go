@@ -59,6 +59,14 @@ func InitInertia(assets, resources embed.FS, port string) *inertia.Inertia {
 		rootViewFile,
 		inertia.WithVersionFromFileFS(assets, manifestPath),
 		inertia.WithSSR(),
+		// Surface SSR failures (sidecar down, a page component throwing during
+		// renderToString, render timeout) on the standard logger — gonertia's
+		// default is io.Discard, which silently swallows every one. The request
+		// still succeeds via the client-side fallback; this only makes the
+		// degradation visible. Production branch only: the dev branch above has
+		// no SSR sidecar under `dev.sh`, so logging there would be pure
+		// connection-refused noise on every full page load.
+		inertia.WithLogger(log.Default()),
 	)
 	if err != nil {
 		log.Fatal(err)
