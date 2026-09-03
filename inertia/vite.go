@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"io/fs"
 	"log"
+	"net/http"
 	"os"
 	"path"
 	"strings"
+	"time"
 
 	inertia "github.com/romsar/gonertia/v3"
 )
@@ -67,6 +69,12 @@ func InitInertia(assets, resources embed.FS, port string) *inertia.Inertia {
 		// no SSR sidecar under `dev.sh`, so logging there would be pure
 		// connection-refused noise on every full page load.
 		inertia.WithLogger(log.Default()),
+		// gonertia's default SSR client is &http.Client{} — no timeout. A wedged
+		// but still-listening node process would otherwise block every full-page
+		// render indefinitely (Restart=on-failure does not catch a hung-alive
+		// process). Cap the render round-trip; on timeout gonertia falls back to
+		// client-side rendering and the logger above records it.
+		inertia.WithSSRHTTPClient(&http.Client{Timeout: 2 * time.Second}),
 	)
 	if err != nil {
 		log.Fatal(err)
