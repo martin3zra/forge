@@ -111,20 +111,39 @@ func (ctx *Context) Error(err error, status ...int) {
 		defaultStatus = e.Status()
 	}
 
-	isProduction := os.Getenv("APP_ENV")
-	if slices.Contains([]string{"prod", "production"}, isProduction) {
-		// ctx.Render (via gonertia) always writes 200 itself, with no way to
-		// override it directly — wrap the writer so whichever call actually
-		// commits the response (an explicit WriteHeader, or an implicit one
-		// on first Write) uses the real status instead. Headers gonertia
-		// sets along the way (e.g. Content-Type) go through unmodified.
+	isDev := !slices.Contains([]string{"prod", "production"}, os.Getenv("APP_ENV"))
+
+	props := map[string]any{"status": defaultStatus}
+	if isDev {
+		// Outside production, hand the developer the underlying error on
+		// the page as well (it is logged either way); production never
+		// leaks it.
+		log.Printf("ctx.Error [%d]: %v", defaultStatus, err)
+		props["message"] = foundation.ResolveError(err)
+	}
+
+	// Render the Inertia Error/Index component — the same screen in dev and
+	// prod, so its styling and navigation affordances show in both.
+	//
+	// gonertia's Render always writes a 200 itself with no way to override
+	// it, so wrap the writer to force the real status however the response
+	// is committed. Call Inertia.Render directly rather than ctx.Render,
+	// which recurses back into Error on failure; the template below is the
+	// genuine fallback (no Inertia configured, or the component failed
+	// before writing anything).
+	if ctx.Inertia != nil {
+		w := &statusOverrideWriter{ResponseWriter: ctx.Response, status: defaultStatus}
 		original := ctx.Response
-		ctx.Response = &statusOverrideWriter{ResponseWriter: original, status: defaultStatus}
-		ctx.Render("Error/Index", map[string]any{
-			"status": defaultStatus,
-		})
+		ctx.Response = w
+		renderErr := ctx.Inertia.Render(ctx.Response, ctx.Request, "Error/Index", props)
 		ctx.Response = original
-		return
+		if renderErr == nil {
+			return
+		}
+		log.Println("ctx.Error: Error/Index render failed:", renderErr)
+		if w.wrote {
+			return // response already committed — nothing safe left to do
+		}
 	}
 
 	title, ok := titleHttpCode[defaultStatus]
@@ -132,22 +151,21 @@ func (ctx *Context) Error(err error, status ...int) {
 		title = "Something went wrong."
 	}
 
-	// display errors when on dev mode. otherwise logged this error.
-	data := make(map[string]any)
-	data["title"] = title
-	data["message"] = foundation.ResolveError(err)
-	data["status"] = defaultStatus
+	data := map[string]any{
+		"title":   title,
+		"message": foundation.ResolveError(err),
+		"status":  defaultStatus,
+	}
 
-	tmpl, err := template.ParseFS(ctx.resources, "resources/views/error/500.html")
-	if err != nil {
-		log.Println(err.Error())
+	tmpl, tmplParseErr := template.ParseFS(ctx.resources, "resources/views/error/500.html")
+	if tmplParseErr != nil {
+		log.Println(tmplParseErr.Error())
 		http.Error(ctx.Response, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
 
 	ctx.Response.WriteHeader(defaultStatus)
-	tmplErr := tmpl.Execute(ctx.Response, data)
-	if tmplErr != nil {
+	if tmplErr := tmpl.Execute(ctx.Response, data); tmplErr != nil {
 		log.Println(tmplErr.Error())
 		http.Error(ctx.Response, "Internal Server Error", http.StatusInternalServerError)
 	}
