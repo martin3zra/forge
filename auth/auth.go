@@ -55,13 +55,22 @@ func NewAuth(ctx context.Context) *Auth {
 }
 
 func (a *Auth) Authenticate(username, password string) (foundation.Authenticatable, error) {
-	user, err := a.attempt("email", username)
+	return a.AuthenticateBy("email", username, password)
+}
+
+// AuthenticateBy is Authenticate generalized to an arbitrary lookup column —
+// a host app that lets a user log in with, say, either an email or a
+// username picks the column itself and calls this instead. The registered
+// CredentialResolver already accepts any column (see SetCredentialResolver);
+// this is just the exported entry point that lets a caller pass one.
+func (a *Auth) AuthenticateBy(column, identifier, secret string) (foundation.Authenticatable, error) {
+	user, err := a.attempt(column, identifier)
 	if err != nil {
 		log.Printf("error authenticating user: %s\n", err)
 		return nil, err
 	}
 
-	if !a.EnsureIsCurrentPassword(user.GetAuthPassword(), password) {
+	if !a.EnsureIsCurrentPassword(user.GetAuthPassword(), secret) {
 		log.Printf("error invalid password")
 		return nil, errors.New("error invalid password")
 	}
