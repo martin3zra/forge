@@ -103,7 +103,7 @@ func (ctx *Context) Error(err error, status ...int) {
 		defaultStatus = status[0]
 	}
 
-	if errors.Is(err, sql.ErrNoRows) {
+	if errors.Is(err, sql.ErrNoRows) || errors.Is(err, playsql.ErrNotFound) {
 		defaultStatus = http.StatusNotFound
 	}
 
