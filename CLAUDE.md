@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-`forge` (`github.com/martin3zra/forge`) is a Laravel-inspired web framework for Go, built on the standard `net/http`. It is a **library**, not an application — there is no `main` package and no binary. Each top-level directory is an independent feature package (`auth`, `routing`, `session`, `validator`, `foundation`, `i18n`, `database`, `cache`, `mailer`, `inertia`, `console`, `support`, `store`). Consuming applications wire these together.
+`forge` (`github.com/martin3zra/forge`) is a Laravel-inspired web framework for Go, built on the standard `net/http`. It is a **library**, not an application — there is no `main` package and no binary. Each top-level directory is an independent feature package (`auth`, `routing`, `session`, `collection`, `validator`, `foundation`, `i18n`, `database`, `cache`, `mailer`, `inertia`, `console`, `support`, `store`). Consuming applications wire these together.
 
 ## Commands
 
@@ -12,7 +12,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 go build ./...                          # compile all packages
 go vet ./...                            # static checks
 go test ./...                           # run all tests
-go test ./validator/ -run TestName      # single test (packages with tests: validator, routing, mailer)
+go test ./validator/ -run TestName      # single test (packages with tests: validator, routing, mailer, collection)
 go test -v ./routing/                   # verbose, one package
 go build -tags prod ./...               # build with embedded production assets (see Build tags)
 ```
@@ -40,7 +40,7 @@ Cross-cutting dependencies travel through `context.Context`, keyed by empty stru
 
 - **`routing`** — wraps `net/http`. `routing.Context` carries `Params`, `BindQuery`, `BindJSON`. Middleware is functional (`func(HandlerFunc) HandlerFunc`), composed via `WithMiddleware`, excluded per-route with `WithoutMiddleware`, and grouped with `GroupPrefix` (Laravel-style nestable prefixes). See `routing/README.md` for the full API.
 - **`support.FormRequest`** — mirrors Laravel form requests: `Authorize()`, `Rules()`, `Messages()`, `PrepareForValidation()`, plus `SetContext`/`SetPathParams`. Embed `support.FormRequest` and override methods. It composes a `validator.Validator` and pulls the authed user from context.
-- **`validator`** — **rule-driven** (Laravel-style): it iterates the rule set and resolves each attribute's value from the data via dot-path, through a `source` adapter (`validator/source.go`) over either a **struct** (keyed by `json` tag) or a **`map[string]any`**. Rules are a `map[string]any` of pipe-delimited strings (`"required|max:255"`). Nested fields use dotted keys; collections use a `*` wildcard that expands to concrete indices (`contacts.0.name`). Absent map keys fail `required`; integral JSON floats are coerced to int. Supports `bail`/`sometimes`, custom messages via a `Messages()` method (struct input only), and DB-backed rules (`unique`, `exists`). Localized messages in `validator/locale/{en,es}.go`; language defaults to `es`. Adding a rule means registering it in the rule-set slices in `validator/types.go` **and** implementing the check.
+- **`validator`** — **rule-driven** (Laravel-style): it iterates the rule set and resolves each attribute's value from the data via dot-path, through a `source` adapter (`validator/source.go`) over either a **struct** (keyed by `json` tag) or a **`map[string]any`**. Rules are a `map[string]any` of pipe-delimited strings (`"required|max:255"`). Nested fields use dotted keys; collections use a `*` wildcard that expands to concrete indices (`contacts.0.name`). Absent map keys fail `required`; integral JSON floats are coerced to int. Supports `bail`/`sometimes`, custom messages via a `Messages()` method (struct input only), and DB-backed rules (`unique`, `exists`). Localized messages in `validator/locale/{en,es}.go`; language resolves from `SetLanguage`, then the context locale (`i18n.Locale`, set by `i18n.LocaleMiddleware` from `Accept-Language`), then `SetDefaultLanguage` (default `es`). Adding a rule means registering it in the rule-set slices in `validator/types.go` **and** implementing the check.
 
 ### Build tags for assets
 
