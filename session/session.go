@@ -86,7 +86,8 @@ func (s *Session) Errors(name string, value string) {
 func (s *Session) FormErrors(values foundation.ErrorBag) {
 	errors, ok := s.payload["errors"]
 	if !ok {
-		s.payload["errors"] = values
+		// Stored as the plain map type Errors asserts on, not ErrorBag.
+		s.payload["errors"] = map[string][]string(values)
 		return
 	}
 	data := errors.(map[string][]string)
