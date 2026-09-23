@@ -3,6 +3,7 @@ package validator
 import (
 	"context"
 	"fmt"
+	"math"
 	"reflect"
 	"regexp"
 	"slices"
@@ -308,10 +309,11 @@ func (v *Validator) evaluateDateRule(rule string, ruleValue string, value time.T
 func (v *Validator) evaluateMultipleValueRule(key, rule string, value reflect.Value, attributes []string) {
 	fieldValue := value
 	if rule == "digits_between" {
-		if value.Kind() != reflect.Int {
+		n, ok := intValue(unwrapValue(value))
+		if !ok {
 			return
 		}
-		fieldValue = reflect.ValueOf(digits(int(value.Int())))
+		fieldValue = reflect.ValueOf(digits(n))
 	}
 
 	if rule == "required_if" {
@@ -339,8 +341,10 @@ func (v *Validator) evaluateSingleValueRule(key, rule string, ruleValue any, val
 
 	castedRuleValue, _ := strconv.Atoi(ruleValue.(string))
 	switch value.Kind() {
-	case reflect.Int:
-		v.evaluateIntRules(key, rule, int(value.Int()), castedRuleValue)
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
+		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		n, _ := intValue(value)
+		v.evaluateIntRules(key, rule, n, castedRuleValue)
 	case reflect.String:
 		v.evaluateStringRules(key, rule, value.String(), castedRuleValue)
 	case reflect.Float64:
@@ -462,6 +466,22 @@ func getDataTypeUsingReflection(value reflect.Value) string {
 		return "int"
 	default:
 		return "string"
+	}
+}
+
+// intValue reads any signed or unsigned integer kind as an int. Unsigned values
+// beyond math.MaxInt are clamped so size comparisons stay correct.
+func intValue(v reflect.Value) (int, bool) {
+	switch v.Kind() {
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return int(v.Int()), true
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
+		if u := v.Uint(); u <= math.MaxInt {
+			return int(u), true
+		}
+		return math.MaxInt, true
+	default:
+		return 0, false
 	}
 }
 
