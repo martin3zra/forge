@@ -1,6 +1,7 @@
 package routing
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/martin3zra/forge/foundation"
@@ -24,8 +25,17 @@ func WithRequest[T any](handler func(ctx *Context, body *T)) HandlerFunc {
 				return
 			}
 
-			// Validation failures on a browser/Inertia form submit flash the
-			// errors back to the previous page.
+			// Validation failures were already flashed field by field by
+			// ParseRequest; storing them again under "status" would surface
+			// the raw JSON as a form-level error.
+			var verr foundation.ValidationError
+			if errors.As(err, &verr) {
+				ctx.Back()
+				return
+			}
+
+			// Other unprocessable requests have nothing in the session yet,
+			// so "status" is where the user sees them.
 			if status == http.StatusUnprocessableEntity {
 				ctx.Errors("status", err.Error())
 				ctx.Back()

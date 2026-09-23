@@ -55,8 +55,9 @@ func ParseRequest(r *http.Request, body any, params ...map[string]string) error 
 		formRequest.Validate(body, formRequest.Rules(), formRequest.PrepareForValidation)
 		errorMesssages := formRequest.Errors()
 		if len(errorMesssages) > 0 {
-			session.GetSession(r).FormErrors(foundation.ErrorBag(errorMesssages))
-			return errors.New(foundation.ToJSON(errorMesssages))
+			bag := foundation.ErrorBag(errorMesssages)
+			session.GetSession(r).FormErrors(bag)
+			return foundation.ValidationError{Errors: bag}
 		}
 
 		formRequest.PassedValidation(formRequest.Validated())

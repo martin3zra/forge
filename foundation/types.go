@@ -74,3 +74,15 @@ type HTTPError struct {
 
 func (e HTTPError) Status() int   { return e.StatusCode }
 func (e HTTPError) Error() string { return e.Message }
+
+// ValidationError is returned when a form request fails its Rules(). Errors
+// has already been flashed to the session field by field, so a caller
+// rendering it for a browser must not store it again. Error() keeps the
+// JSON shape API clients have always received.
+type ValidationError struct {
+	Errors ErrorBag
+}
+
+func (ValidationError) Status() int { return http.StatusUnprocessableEntity }
+
+func (e ValidationError) Error() string { return ToJSON(e.Errors) }
