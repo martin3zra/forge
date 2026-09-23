@@ -265,7 +265,7 @@ func (va *ValidatesAttributes) validateArrayRules(rule string, attributes []stri
 }
 
 func (va *ValidatesAttributes) validateIn(attributes []string, value reflect.Value) bool {
-	return slices.Contains(attributes, value.String())
+	return slices.Contains(attributes, unwrapValue(value).String())
 }
 
 func splitWheres(attr []string) [][]string {
