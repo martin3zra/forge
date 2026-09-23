@@ -16,8 +16,8 @@ github.com/hashicorp/golang-lru/v2 v2.0.7 h1:a+bsQ5rvGLjzHuww6tVxozPZFVghXaHOwFs
 github.com/hashicorp/golang-lru/v2 v2.0.7/go.mod h1:QeFd9opnmA6QUJc5vARoKUSoFhyfM2/ZepoAG6RGpeM=
 github.com/lib/pq v1.12.3 h1:tTWxr2YLKwIvK90ZXEw8GP7UFHtcbTtty8zsI+YjrfQ=
 github.com/lib/pq v1.12.3/go.mod h1:/p+8NSbOcwzAEI7wiMXFlgydTwcgTr3OSKMsD2BitpA=
-github.com/martin3zra/playsql v0.6.0 h1:GIcSrqg9TvVNA2A3rXdUX6PkBtwh+alFHLJTPm8xHoo=
-github.com/martin3zra/playsql v0.6.0/go.mod h1:nItoVH1wwETVqoJvBqRq5Mmf1EHtBQTq6zXgL4MguiM=
+github.com/martin3zra/playsql v0.7.0 h1:h/X0kdZWA7sRz3sJA0W7ER82tVWdcxVNqG2gWEIK4h4=
+github.com/martin3zra/playsql v0.7.0/go.mod h1:nItoVH1wwETVqoJvBqRq5Mmf1EHtBQTq6zXgL4MguiM=
 github.com/mattn/go-isatty v0.0.20 h1:xfD0iDuEKnDkl03q4limB+vH+GxLEtL/jb4xVJSWWEY=
 github.com/mattn/go-isatty v0.0.20/go.mod h1:W+V8PltTTMOvKvAeJH7IuucS94S2C6jfK/D7dTCTo3Y=
 github.com/microsoft/go-mssqldb v1.10.0 h1:pHEt+Qz6YFPWqREq10mqSE524QQo+/QremwTCQht7TY=
