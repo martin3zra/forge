@@ -132,7 +132,11 @@ rules := map[string]any{
 
 ## Localization
 
-Messages come from `validator/locale/{en,es}.go`. Language defaults to **`es`**; set `Validator.language` to override.
+Messages come from `validator/locale/{en,es}.go` (regional tags like `es-DO` use their base language; anything other than `es` gets English). The language is resolved per validation, first match wins:
+
+1. `v.SetLanguage("en")` — pins one validator instance.
+2. The locale in the context passed to `Validate` — set with `i18n.WithLocale(ctx, "en")`, or per request by `i18n.LocaleMiddleware` (negotiated from `Accept-Language`). `support.FormRequest` validates with the request context, so form requests pick this up automatically.
+3. The package default — `validator.SetDefaultLanguage("en")` at boot. Defaults to **`es`**.
 
 ## Extending
 

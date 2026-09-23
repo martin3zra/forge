@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/martin3zra/forge/i18n"
 	"github.com/martin3zra/forge/validator/locale"
 )
 
@@ -390,16 +391,45 @@ func (v *Validator) evaluateStringRules(key, rule string, fieldValue string, rul
 	}
 }
 
-func (v *Validator) resolveLanguage(fallback string) string {
-	if v.language == nil {
-		return fallback
+// defaultLanguage is the message language used when neither SetLanguage nor
+// the request context (i18n.WithLocale) names one. "es" preserves the
+// validator's historical behavior; apps change it once at boot with
+// SetDefaultLanguage.
+var defaultLanguage = "es"
+
+// SetDefaultLanguage sets the package-wide fallback message language ("en",
+// "es"). Call it once at application boot, not per request — per-request
+// selection belongs in the context (i18n.WithLocale / i18n.LocaleMiddleware).
+func SetDefaultLanguage(lang string) {
+	defaultLanguage = lang
+}
+
+// SetLanguage pins this validator's message language, overriding both the
+// request locale and the package default.
+func (v *Validator) SetLanguage(lang string) {
+	v.language = &lang
+}
+
+// Language reports the message language this validator resolves to, in
+// precedence order: SetLanguage, then the locale in the validation context
+// (i18n.Locale), then the package default (SetDefaultLanguage).
+func (v *Validator) Language() string {
+	if v.language != nil && *v.language != "" {
+		return *v.language
 	}
 
-	return *v.language
+	if lang, ok := i18n.Locale(v.ctx); ok {
+		return lang
+	}
+
+	return defaultLanguage
 }
 
 func (v *Validator) resolveMessages() map[string]any {
-	if v.resolveLanguage("es") == "es" {
+	// Match on the base language so regional tags ("es-DO", "en-US") resolve
+	// to the bundled message sets.
+	lang, _, _ := strings.Cut(strings.ToLower(v.Language()), "-")
+	if lang == "es" {
 		return locale.SpanishMessages()
 	}
 
