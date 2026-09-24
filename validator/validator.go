@@ -181,6 +181,9 @@ func containsRuleToken(rules []any, token string) bool {
 }
 
 func (v *Validator) compileRuleSet(key string, value reflect.Value, present bool, rules []any) {
+	// bail is per-attribute: a failure on the previous attribute must not
+	// short-circuit this one.
+	v.shouldStopOnFirstFailure(false)
 	v.sometimes = containsRuleToken(rules, "sometimes")
 	v.canBail = containsRuleToken(rules, "bail")
 	hasRequired := containsRuleToken(rules, "required")

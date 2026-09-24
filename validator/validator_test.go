@@ -636,3 +636,28 @@ func TestValidatedIsNilWhenValidationFails(t *testing.T) {
 		t.Errorf("Validated() = %#v, want nil after a failed validation", got)
 	}
 }
+
+// A bail failure on one attribute must not skip validation of the next one,
+// whichever order the rule map is iterated in.
+func TestBailDoesNotLeakAcrossAttributes(t *testing.T) {
+	cases := map[string]map[string]any{
+		"fails on last rule": {"first": "", "second": ""},
+		"absent attribute":   {"second": ""},
+	}
+
+	for name, data := range cases {
+		t.Run(name, func(t *testing.T) {
+			for range 100 {
+				var v = validator.Validator{}
+				v.Validate(context.Background(), data, map[string]any{
+					"first":  "bail|required",
+					"second": "required",
+				})
+
+				if _, ok := v.Errors()["second"]; !ok {
+					t.Fatalf("expected second to fail required, got errors %v", v.Errors())
+				}
+			}
+		})
+	}
+}
