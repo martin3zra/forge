@@ -22,10 +22,11 @@ func InitInertia(assets, resources embed.FS, port string) *inertia.Inertia {
 	// check if laravel-vite-plugin is running in dev mode (it puts a "hot" file in the public folder)
 	_, err := os.Stat(viteHotFile)
 	if err == nil {
-		i, err := inertia.NewFromFile(
-			rootViewFile,
-			inertia.WithSSR(),
-		)
+		var opts []inertia.Option
+		if ssrEnabled() {
+			opts = append(opts, inertia.WithSSR())
+		}
+		i, err := inertia.NewFromFile(rootViewFile, opts...)
 
 		if err != nil {
 			log.Fatal(err)
@@ -56,10 +57,36 @@ func InitInertia(assets, resources embed.FS, port string) *inertia.Inertia {
 	}
 
 	manifestPath := "public/build/manifest.json"
-	i, err := inertia.NewFromFileFS(
-		resources,
-		rootViewFile,
-		inertia.WithVersionFromFileFS(assets, manifestPath),
+	opts := []inertia.Option{inertia.WithVersionFromFileFS(assets, manifestPath)}
+	if ssrEnabled() {
+		opts = append(opts, ssrOptions()...)
+	}
+	i, err := inertia.NewFromFileFS(resources, rootViewFile, opts...)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	manifestFile, _ := assets.Open("public/build/manifest.json")
+	i.ShareTemplateFunc("vite", vite(manifestFile, "/build/"))
+
+	return i
+}
+
+// ssrEnabled reports whether server-side rendering is on. INERTIA_SSR=false
+// (or 0, off, no) turns it off: pages then render client-side only and no
+// Node sidecar is needed. Unset or anything else keeps it on.
+func ssrEnabled() bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("INERTIA_SSR"))) {
+	case "false", "0", "off", "no":
+		return false
+	}
+	return true
+}
+
+// ssrOptions enables SSR in production, with its failures logged and its
+// render round-trip capped.
+func ssrOptions() []inertia.Option {
+	return []inertia.Option{
 		inertia.WithSSR(),
 		// Surface SSR failures (sidecar down, a page component throwing during
 		// renderToString, render timeout) on the standard logger — gonertia's
@@ -75,15 +102,7 @@ func InitInertia(assets, resources embed.FS, port string) *inertia.Inertia {
 		// process). Cap the render round-trip; on timeout gonertia falls back to
 		// client-side rendering and the logger above records it.
 		inertia.WithSSRHTTPClient(&http.Client{Timeout: 2 * time.Second}),
-	)
-	if err != nil {
-		log.Fatal(err)
 	}
-
-	manifestFile, _ := assets.Open("public/build/manifest.json")
-	i.ShareTemplateFunc("vite", vite(manifestFile, "/build/"))
-
-	return i
 }
 
 func vite(f fs.File, buildDir string) func(path string) (string, error) {

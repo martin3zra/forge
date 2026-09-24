@@ -21,4 +21,4 @@ i := inertia.InitInertia(assets, resources, "5173") // port = Vite dev server po
 - **Dev** — if `./public/hot` exists (created by `laravel-vite-plugin` in dev), it serves assets from the Vite dev server and enables HMR. The `vite` template func resolves entries against the hot URL.
 - **Prod** — otherwise it reads `public/build/manifest.json` from the embedded FS, sets the asset version from the manifest, and resolves hashed asset paths under `/build/`.
 
-SSR is enabled in both modes. The root template is `resources/views/root.html`. An empty `abilities` map is shared into templates for later injection by permission middleware.
+SSR is enabled in both modes unless `INERTIA_SSR` is `false` (or `0`, `off`, `no`), which renders pages client-side only — no Node sidecar needed. The root template is `resources/views/root.html`. An empty `abilities` map is shared into templates for later injection by permission middleware.
