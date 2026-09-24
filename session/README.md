@@ -22,6 +22,8 @@ handler = mgr.Handle(next) // middleware: starts session, enforces CSRF, persist
 
 `NewSessionManager` spawns a background goroutine that GCs expired sessions on the gc interval.
 
+`secure` marks the session cookie `Secure` on every response, whether or not the request reached the app over TLS — so it holds behind a TLS-terminating proxy (e.g. `tailscale serve`), where the app only sees plain HTTP. Pass `false` for local HTTP development.
+
 ## Middleware behavior (`Handle`)
 
 - Loads the session from the cookie (or creates a fresh one) and attaches it to the request context under `SessionContextKey{}`.

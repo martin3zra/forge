@@ -36,7 +36,7 @@ func writeCookieIfNecessary(w *sessionResponseWriter) {
 		Value:    session.Id,
 		HttpOnly: w.sessionManager.httpOnly,
 		Path:     "/",
-		Secure:   secureOnlyWithHttps(w),
+		Secure:   w.sessionManager.secure,
 		SameSite: http.SameSiteLaxMode,
 		Expires:  time.Now().Add(w.sessionManager.idleExpiration),
 		MaxAge:   int(w.sessionManager.idleExpiration / time.Second),
@@ -49,10 +49,4 @@ func writeCookieIfNecessary(w *sessionResponseWriter) {
 	http.SetCookie(w.ResponseWriter, cookie)
 
 	w.done = true
-}
-
-func secureOnlyWithHttps(w *sessionResponseWriter) bool {
-	// Flag this cookie as secure only if we build for production
-	// and the request was made it using https scheme
-	return w.sessionManager.secure && w.request.TLS != nil
 }
