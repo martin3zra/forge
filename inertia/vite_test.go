@@ -21,3 +21,17 @@ func TestSSREnabled(t *testing.T) {
 		}
 	}
 }
+
+func TestSSRURL(t *testing.T) {
+	for value, want := range map[string]string{
+		"":                         defaultSSRURL,
+		"  ":                       defaultSSRURL,
+		"http://127.0.0.1:13716":   "http://127.0.0.1:13716",
+		" http://127.0.0.1:13716 ": "http://127.0.0.1:13716",
+	} {
+		t.Setenv("INERTIA_SSR_URL", value)
+		if got := ssrURL(); got != want {
+			t.Errorf("INERTIA_SSR_URL=%q: ssrURL() = %q, want %q", value, got, want)
+		}
+	}
+}

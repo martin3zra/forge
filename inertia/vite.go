@@ -24,7 +24,7 @@ func InitInertia(assets, resources embed.FS, port string) *inertia.Inertia {
 	if err == nil {
 		var opts []inertia.Option
 		if ssrEnabled() {
-			opts = append(opts, inertia.WithSSR())
+			opts = append(opts, inertia.WithSSR(ssrURL()))
 		}
 		i, err := inertia.NewFromFile(rootViewFile, opts...)
 
@@ -83,11 +83,26 @@ func ssrEnabled() bool {
 	return true
 }
 
+// defaultSSRURL is where gonertia posts renders unless INERTIA_SSR_URL says
+// otherwise: the port Inertia's own SSR server listens on by default.
+const defaultSSRURL = "http://127.0.0.1:13714"
+
+// ssrURL is the SSR sidecar's address: INERTIA_SSR_URL, else the default.
+// Apps sharing a host each need their own, since every sidecar defaults to
+// the same port and a render posted to another app's sidecar renders that
+// app's pages.
+func ssrURL() string {
+	if u := strings.TrimSpace(os.Getenv("INERTIA_SSR_URL")); u != "" {
+		return u
+	}
+	return defaultSSRURL
+}
+
 // ssrOptions enables SSR in production, with its failures logged and its
 // render round-trip capped.
 func ssrOptions() []inertia.Option {
 	return []inertia.Option{
-		inertia.WithSSR(),
+		inertia.WithSSR(ssrURL()),
 		// Surface SSR failures (sidecar down, a page component throwing during
 		// renderToString, render timeout) on the standard logger — gonertia's
 		// default is io.Discard, which silently swallows every one. The request
