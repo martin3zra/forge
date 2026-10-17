@@ -42,4 +42,18 @@ The `Content()` template is parsed from the embedded FS and rendered with `Data(
 m.To("user@example.com", "User").Send(Welcome{Name: "Ada"})
 ```
 
-> Note: the SMTP path calls `log.Fatal` on send failure. `mailer_test.go` expects a local SMTP server (e.g. MailHog on `:1025`).
+> `mailer_test.go` expects a local SMTP server (e.g. MailHog on `:1025`).
+> The driver regression tests use local test servers and need no provider credentials.
+
+## Resend
+
+Use `Config{Driver: Resend, APIKey: os.Getenv("RESEND_API_KEY"),
+FromAddress: "noreply@your-verified-domain.com", FromName: "Your App"}`.
+The driver uses the official Resend Go SDK and preserves existing Mailable
+HTML templates, recipients, and attachments.
+
+`SendContext(ctx, mailable) error` returns template and provider errors and
+bounds network operations to 30 seconds (or the caller's earlier deadline).
+`Send(mailable)` remains available and logs failures without exiting.
+Unknown drivers return an error. API responses outside 2xx return an error.
+SMTP supports STARTTLS and implicit TLS (`ssl`/`smtps`, or port 465).
