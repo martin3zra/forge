@@ -94,3 +94,40 @@ func TestSendContextValidation(t *testing.T) {
 }
 
 var emptyTemplates embed.FS
+
+type addressMail struct {
+	fakeMailable
+	recipients []Individual
+}
+
+func (m addressMail) To() []Individual { return m.recipients }
+
+func TestResendAddressFormatting(t *testing.T) {
+	for _, tc := range []struct {
+		name, displayName, wantFrom, wantTo, wantExtra string
+	}{
+		{"unnamed", "", "sender@example.com", "grace@example.com", "other@example.com"},
+		{"blank", " \t ", "sender@example.com", "grace@example.com", "other@example.com"},
+		{"named", "Doe, Grace", `"Doe, Grace" <sender@example.com>`, `"Doe, Grace" <grace@example.com>`, `"Doe, Grace" <other@example.com>`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := New(Config{Driver: Resend, APIKey: "test-key", FromAddress: "sender@example.com", FromName: tc.displayName}, testTemplates).To("grace@example.com", tc.displayName)
+			m.httpClient = &http.Client{Transport: mailTransport(func(r *http.Request) (*http.Response, error) {
+				var body struct {
+					From string
+					To   []string
+				}
+				if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+					t.Fatal(err)
+				}
+				if body.From != tc.wantFrom || len(body.To) != 2 || body.To[0] != tc.wantTo || body.To[1] != tc.wantExtra {
+					t.Errorf("unexpected addresses: %+v", body)
+				}
+				return &http.Response{StatusCode: 200, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(`{"id":"email-test"}`))}, nil
+			})}
+			if err := m.SendContext(context.Background(), addressMail{recipients: []Individual{{Name: tc.displayName, Email: "other@example.com"}}}); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}

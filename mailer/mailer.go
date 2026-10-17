@@ -125,7 +125,12 @@ func (m Mailer) sendViaResend(ctx context.Context, message Mailable, html string
 	if strings.TrimSpace(m.cfg.FromAddress) == "" {
 		return fmt.Errorf("resend sender address is required")
 	}
-	address := func(p Individual) string { return (&mail.Address{Name: p.Name, Address: p.Email}).String() }
+	address := func(p Individual) string {
+		if strings.TrimSpace(p.Name) == "" {
+			return p.Email
+		}
+		return (&mail.Address{Name: p.Name, Address: p.Email}).String()
+	}
 	params := &resend.SendEmailRequest{
 		From: address(Individual{Name: m.cfg.FromName, Email: m.cfg.FromAddress}),
 		To:   []string{address(m.to)}, Subject: message.Subject(), Html: html,
